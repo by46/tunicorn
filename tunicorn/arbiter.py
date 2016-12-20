@@ -10,13 +10,23 @@ import time
 from tunicorn.packages import six
 from tunicorn.workers import Worker
 from . import util
+from .exceptions import HaltServerException
 
 
 class ArbiterBase(object):
     DEFAULT_SIGNALS = ["HUP", "QUIT", "INT", "TERM", "TTIN", "TTOU", "USR1", "USR2", "WINCH"]
 
+    # A flag indicating if a worker failed to
+    # to boot. If a worker process exist with
+    # this error code, the arbiter will terminate.
+    WORKER_BOOT_ERROR = 3
+
+    # A flag indicating if an application failed to be loaded
+    APP_LOAD_ERROR = 4
+
     def __init__(self, signals=None):
         self.master_name = "Master"
+        self.reexec_pid = 0
 
         if signals is None:
             signals = list(self.DEFAULT_SIGNALS)
@@ -92,6 +102,38 @@ class ArbiterBase(object):
                 except(OSError, KeyError):
                     return
             raise
+
+    def reap_workers(self):
+        """
+        reap workers to avoid zombie process
+        :return:
+        """
+        try:
+            while True:
+                # TODO(benjamin): what is os.WNOHANG
+                wpid, status = os.waitpid(-1, os.WNOHANG)
+                if not wpid:
+                    break
+                if self.reexec_pid == wpid:
+                    self.reexec_pid = 0
+                else:
+                    exit_code = status >> 8
+                    if exit_code == self.WORKER_BOOT_ERROR:
+                        reason = "Worker failed to boot."
+                        raise HaltServerException(reason, exit_code)
+                    if exit_code == self.APP_LOAD_ERROR:
+                        reason = "App failed to load."
+                        raise HaltServerException(reason, exit_code)
+
+                    worker = self.WORKERS.pop(wpid, None)
+                    if not worker:
+                        continue
+
+                    # TODO(benjamin): shut down worker
+                    worker.tmp.close()
+        except OSError as e:
+            if e.errno != errno.ECHILD:
+                raise
 
     def run(self):
         self.start()
