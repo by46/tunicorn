@@ -29,6 +29,7 @@ class Signaler(object):
             signals = list(self.DEFAULT_SIGNALS)
         elif isinstance(signals, six.string_types):
             signals = signals.split()
+            signals.extend(self.DEFAULT_SIGNALS)
 
         self.SIGNALS = [getattr(signal, "SIG%s" % x) for x in signals]
         self.SIG_NAMES = iter_signals()

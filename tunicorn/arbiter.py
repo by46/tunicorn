@@ -1,5 +1,4 @@
 import errno
-import logging
 import os
 import random
 import select
@@ -25,12 +24,13 @@ class Arbiter(Signaler):
     APP_LOAD_ERROR = 4
 
     def __init__(self, app, signals=None):
-        super(Arbiter, self).__init__(signals=signals)
+        super(Arbiter, self).__init__(signals="CHLD")
+        self._last_active_count = None
         self.app = app
         self.worker_class = self.app.config.WORKER_CLASS
         self.num_workers = self.app.config.WORKERS
         # TODO(benjamin): process logger
-        self.timeout = 10
+        self.timeout = self.app.config.TIMEOUT
         self.logger = self.app.logger
 
         self.master_name = "Master"
@@ -49,6 +49,10 @@ class Arbiter(Signaler):
     # --------------------------------------------------
     # signals handler methods
     # --------------------------------------------------
+    def init_signals(self):
+        super(Arbiter, self).init_signals()
+        signal.signal(signal.SIGCHLD, self.handle_chld)
+
     def handle_chld(self, sig, frame):
         self.reap_workers()
         self.wake_up()
@@ -127,6 +131,20 @@ class Arbiter(Signaler):
     def manage_workers(self):
         if len(self.WORKERS.keys()) < self.num_workers:
             self.spawn_workers()
+
+        workers = self.WORKERS.items()
+        workers = sorted(workers, key=lambda w: w[1].age)
+        while len(workers) > self.num_workers:
+            pid, _ = workers.pop(0)
+            self.kill_worker(pid, signal.SIGTERM)
+
+        active_worker_count = len(workers)
+        if self._last_active_count != active_worker_count:
+            self._last_active_count = active_worker_count
+            self.logger.debug('{0} workers'.format(active_worker_count),
+                              extra={"metric": "gunicorn.workers",
+                                     "value": active_worker_count,
+                                     "mtype": "gauge"})
 
     def spawn_workers(self):
         for i in range(self.num_workers - len(self.WORKERS.keys())):
@@ -216,6 +234,24 @@ class Arbiter(Signaler):
             # raise OSError when  master have no child process
             if e.errno != errno.ECHILD:
                 raise
+
+    def murder_workers(self):
+        if not self.timeout:
+            return
+
+        for pid, worker in self.WORKERS.items():
+            try:
+                if time.time() - worker.tmp.last_update() <= self.timeout:
+                    continue
+            except (OSError, IOError):
+                continue
+
+            if not worker.aborted:
+                self.logger.critical("WORKER TIMEOUT (pid:%s)", pid)
+                worker.aborted = True
+                self.kill_worker(pid, signal.SIGABRT)
+            else:
+                self.kill_worker(pid, signal.SIGKILL)
 
     # --------------------------------------------------
     # management methods
@@ -312,6 +348,8 @@ class Arbiter(Signaler):
                 sig = self.SIG_QUEUE.pop(0) if len(self.SIG_QUEUE) else None
                 if sig is None:
                     self.sleep()
+                    self.murder_workers()
+                    self.manage_workers()
                     continue
 
                 if sig not in self.SIG_NAMES:

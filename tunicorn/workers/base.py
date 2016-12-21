@@ -20,6 +20,7 @@ class Worker(Signaler):
         self.config = self.app.config
         self.timeout = timeout
         self.booted = False
+        self.aborted = False
         self.alive = True
         self.tmp = WorkerTmp(self.config)
         self.worker_connections = self.config.WORKER_CONNECTIONS
@@ -28,6 +29,9 @@ class Worker(Signaler):
     # signals handlers
     # --------------------------------------------------
     def handle_exit(self):
+        self.alive = False
+
+    def handle_term(self):
         self.alive = False
 
     def handle_quit(self):
