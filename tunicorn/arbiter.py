@@ -46,14 +46,7 @@ class Arbiter(Signaler):
         self.WORKERS = {}
         self.LISTENERS = []
 
-    # --------------------------------------------------
-    # signals handler methods
-    # --------------------------------------------------
-    def init_signals(self):
-        super(Arbiter, self).init_signals()
-        signal.signal(signal.SIGCHLD, self.handle_chld)
-
-    def handle_chld(self, sig, frame):
+    def handle_cld(self):
         self.reap_workers()
         self.wake_up()
 
