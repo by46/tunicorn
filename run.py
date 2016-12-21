@@ -1,4 +1,4 @@
-from tunicorn.arbiter import Arbiter
+from tunicorn.app import Application
 
 if __name__ == '__main__':
-    Arbiter().run()
+    Application('%(prog)s [OPTIONS] [APP_MODULE]').run()
