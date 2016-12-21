@@ -43,6 +43,7 @@ class GeventWorker(Worker):
             s.setblocking(1)
             pool = Pool(self.worker_connections)
 
+            # TODO(benjamin): process handler
             hfun = partial(self.handle, s)
             server = StreamServer(s, handle=hfun, spawn=pool, **ssl_args)
 
@@ -56,10 +57,7 @@ class GeventWorker(Worker):
         try:
             # Stop accepting requests
             for server in servers:
-                if hasattr(server, 'close'):  # gevent 1.0
-                    server.close()
-                if hasattr(server, 'kill'):  # gevent < 1.0
-                    server.kill()
+                server.close()
 
             # Handle current requests until graceful_timeout
             ts = time.time()
@@ -77,7 +75,7 @@ class GeventWorker(Worker):
                 gevent.sleep(1.0)
 
             # Force kill all active the handlers
-            self.log.warning("Worker graceful timeout (pid:%s)" % self.pid)
+            self.logger.warning("Worker graceful timeout (pid:%s)" % self.pid)
             [server.stop(timeout=1) for server in servers]
         except:
             pass

@@ -1,5 +1,7 @@
 import os
 import signal
+import sys
+import time
 
 from tunicorn.signaler import Signaler
 from tunicorn.util import seed
@@ -10,6 +12,7 @@ from .workertmp import WorkerTmp
 class Worker(Signaler):
     def __init__(self, age, parent_pid, sockets, app, timeout, logger=None):
         super(Worker, self).__init__()
+        self.logger = logger or app.logger
         self.age = age
         self.parent_id = parent_pid
         self.sockets = sockets
@@ -20,6 +23,21 @@ class Worker(Signaler):
         self.alive = True
         self.tmp = WorkerTmp(self.config)
         self.worker_connections = self.config.WORKER_CONNECTIONS
+
+    # --------------------------------------------------
+    # signals handlers
+    # --------------------------------------------------
+    def handle_exit(self):
+        self.alive = False
+
+    def handle_quit(self):
+        self.alive = False
+        time.sleep(0.1)
+        sys.exit(0)
+
+    def handle_abort(self):
+        self.alive = False
+        sys.exit(1)
 
     # --------------------------------------------------
     # override methods
@@ -38,7 +56,7 @@ class Worker(Signaler):
 
     def signal(self, sig, frame):
         sig_name = self.SIG_NAMES.get(sig)
-        handler = getattr(self, 'handler_%s' % sig_name, None)
+        handler = getattr(self, 'handle_%s' % sig_name, None)
         if not handler:
             self.logger.error('Unhandled signal: %s', sig_name)
             return
@@ -84,3 +102,11 @@ class Worker(Signaler):
     # --------------------------------------------------
     def __str__(self):
         return '<Worker {0}>'.format(self.pid)
+
+    def notify(self):
+        """\
+        Your worker subclass must arrange to have this method called
+        once every ``self.timeout`` seconds. If you fail in accomplishing
+        this task, the master process will murder your workers.
+        """
+        self.tmp.notify()
