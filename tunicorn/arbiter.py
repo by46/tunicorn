@@ -6,58 +6,15 @@ import select
 import signal
 import sys
 import time
+import traceback
 
 from tunicorn import __version__
-from tunicorn.packages import six
-from tunicorn.workers import Worker
-from . import util
+from .exceptions import AppImportException
 from .exceptions import HaltServerException
+from .signaler import Signaler
 
 
-def iter_signals():
-    """
-    return a dictionary
-    :return:
-    """
-    return dict((getattr(signal, name), name[3:].lower())
-                for name in dir(signal) if name[:3] == "SIG" and name[3] != "_")
-
-
-class Signaler(object):
-    """
-
-    """
-
-    def __init__(self, signals=None):
-        self.PIPE = []
-        self.SIG_QUEUE = []
-
-        if signals is None:
-            signals = list(self.DEFAULT_SIGNALS)
-        self.SIGNALS = [getattr(signal, "SIG%s" % x) for x in signals]
-        self.SIG_NAMES = iter_signals()
-
-    def init_signals(self):
-        if self.PIPE:
-            [os.close(fd) for fd in self.PIPE]
-        self.PIPE = pair = os.pipe()
-
-        for p in pair:
-            util.set_non_blocking(p)
-            util.close_on_exec(p)
-
-        [signal.signal(s, self.signal) for s in self.SIGNALS]
-
-    def signal(self, sig, frame):
-        print sig, frame
-        if len(self.SIG_QUEUE) < 5:
-            self.SIG_QUEUE.append(sig)
-            self.wake_up()
-
-
-class Arbiter(object):
-    DEFAULT_SIGNALS = ["HUP", "QUIT", "INT", "TERM", "TTIN", "TTOU", "USR1", "USR2", "WINCH"]
-
+class Arbiter(Signaler):
     # A flag indicating if a worker failed to
     # to boot. If a worker process exist with
     # this error code, the arbiter will terminate.
@@ -67,64 +24,31 @@ class Arbiter(object):
     APP_LOAD_ERROR = 4
 
     def __init__(self, app, signals=None):
+        super(Arbiter, self).__init__(signals=signals)
         self.app = app
-        self.num_workers = 2
+        self.worker_class = self.app.config.WORKER_CLASS
+        self.num_workers = self.app.config.WORKERS
+        # TODO(benjamin): process logger
+        self.timeout = 10
         self.logger = logging.getLogger('arbiter')
-        self.logger.setLevel(logging.DEBUG)
+        self.logger.setLevel(logging.INFO)
 
         self.master_name = "Master"
         # TODO(benjamin): set from configuration
         self.proc_name = 'Demo'
-        self.master_id = 0
+
+        self.pidfile = None
+        self.worker_age = 0
+        self.master_pid = 0
         self.reexec_pid = 0
         self.pid = None
-
-        if signals is None:
-            signals = list(self.DEFAULT_SIGNALS)
-
-        if isinstance(signals, six.string_types):
-            signals = signals.split()
-
-        self.PIPE = []
-        self.SIG_QUEUE = []
 
         self.WORKERS = {}
         self.LISTENERS = []
 
-        self.SIGNALS = [getattr(signal, "SIG%s" % x) for x in signals]
-        self.SIG_NAMES = dict(
-            (getattr(signal, name), name[3:].lower()) for name in dir(signal)
-            if name[:3] == "SIG" and name[3] != "_"
-        )
-
     # --------------------------------------------------
     # signals handler methods
     # --------------------------------------------------
-
-    def init_signals(self):
-        if self.PIPE:
-            [os.close(fd) for fd in self.PIPE]
-        self.PIPE = pair = os.pipe()
-
-        for p in pair:
-            util.set_non_blocking(p)
-            util.close_on_exec(p)
-
-        [signal.signal(s, self.signal) for s in self.SIGNALS]
-
-    def signal(self, sig, frame):
-        print sig, frame
-        if len(self.SIG_QUEUE) < 5:
-            self.SIG_QUEUE.append(sig)
-            self.wake_up()
-
-    def wake_up(self):
-        try:
-            os.write(self.PIPE[1], b'.')
-        except IOError as e:
-            if e.errno not in [errno.EAGAIN, errno.EINTR]:
-                raise
-
     def handle_chld(self, sig, frame):
         self.reap_workers()
         self.wake_up()
@@ -210,19 +134,37 @@ class Arbiter(object):
         pass
 
     def spawn_worker(self):
-        worker = Worker()
+        self.worker_age += 1
+
+        worker = self.worker_class(self.worker_age, self.pid, self.LISTENERS,
+                                   self.app,
+                                   self.timeout / 2.0)
         pid = os.fork()
         if pid != 0:
+            # Parent process
             self.WORKERS[pid] = worker
             return
 
         worker_pid = os.getpid()
         try:
-            print 'worker ', worker_pid
+            self.logger.info("Booting worker with pid: %s", worker_pid)
             worker.init_process()
+            sys.exit(0)
+        except AppImportException as e:
+            self.logger.debug('Exception while loading the application', exc_info=True)
+            sys.exit(self.APP_LOAD_ERROR)
         except Exception as e:
-            print e
-            sys.exit()
+            self.logger.exception('Exception in worker process')
+            if not worker.booted:
+                sys.exit(self.WORKER_BOOT_ERROR)
+            sys.exit(-1)
+        finally:
+            self.logger.info('Worker exiting (pid: %s)', worker_pid)
+            try:
+                worker.tmp.close()
+            except:
+                self.logger.warning('Exception during worker exit: \n %s',
+                                    traceback.format_exc())
 
     def kill_workers(self, sig):
         workers = list(self.WORKERS.keys())
@@ -314,7 +256,7 @@ class Arbiter(object):
         self.logger.info('Starting tunicorn %s', __version__)
 
         if 'TUNICORN_PID' in os.environ:
-            self.master_id = int(os.environ.get('TUNICORN_PID'))
+            self.master_pid = int(os.environ.get('TUNICORN_PID'))
             self.proc_name += '.2'
 
         self.pid = os.getpid()
@@ -389,82 +331,9 @@ class Arbiter(object):
         except SystemExit:
             raise
         except Exception as e:
+            print e
             self.logger.warning("Unhandled exception in main loop", exc_info=True)
             self.stop(False)
             if self.pidfile is not None:
                 self.pidfile.unlink()
             sys.exit(-1)
-
-
-class Arbiter2(object):
-    def __init__(self):
-        self.num_workers = 2
-        self.logger = logging.getLogger('arbiter')
-        self.logger.setLevel(logging.DEBUG)
-        super(Arbiter, self).__init__()
-
-    # --------------------------------------------------
-    # signal handlers methods
-    # --------------------------------------------------
-    def handle_ttin(self):
-        self.num_workers += 1
-        self.manage_workers()
-
-    def handle_ttou(self):
-        if self.num_workers <= 1:
-            return
-
-        self.num_workers -= 1
-        self.manage_workers()
-
-    # --------------------------------------------------
-    # public methods
-    # --------------------------------------------------
-    def run(self):
-        super(Arbiter, self).run()
-        while True:
-            self.manage_workers()
-            print 'sleep 1 seconds'
-            sig = self.SIG_QUEUE.pop(0) if len(self.SIG_QUEUE) else None
-            if sig is None:
-                self.sleep()
-                continue
-
-            if sig not in self.SIG_NAMES:
-                self.logger.info('Ignoring unknown signal: %s', sig)
-                continue
-
-            sig_name = self.SIG_NAMES.get(sig)
-            handler = getattr(self, 'handler_%s' % sig_name, None)
-            if not handler:
-                self.logger.error('Unhandled signal: %s', sig_name)
-                continue
-
-            self.logger.info('Handling signal: %s', sig_name)
-            handler()
-            self.wake_up()
-
-    def manage_workers(self):
-        if len(self.WORKERS.keys()) < self.num_workers:
-            self.spawn_workers()
-
-    def spawn_workers(self):
-        for i in range(self.num_workers - len(self.WORKERS.keys())):
-            self.spawn_worker()
-            time.sleep(0.1 * random.random())
-        pass
-
-    def spawn_worker(self):
-        worker = Worker()
-        pid = os.fork()
-        if pid != 0:
-            self.WORKERS[pid] = worker
-            return
-
-        worker_pid = os.getpid()
-        try:
-            print 'worker ', worker_pid
-            worker.init_process()
-        except Exception as e:
-            print e
-            sys.exit()

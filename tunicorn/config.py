@@ -231,3 +231,6 @@ class Config(dict):
 
     def __getattr__(self, item):
         return super(Config, self).get(item)
+
+    def __setattr__(self, key, value):
+        return super(Config, self).__setitem__(key, value)

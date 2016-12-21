@@ -21,3 +21,6 @@ class HaltServerException(TunicornException):
         msg = "HaltServer Exception %r %d" % (self.reason, self.exit_status)
         super(HaltServerException, self).__init__(msg)
 
+
+class AppImportException(TunicornException):
+    pass

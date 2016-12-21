@@ -4,9 +4,12 @@ from argparse import ArgumentParser
 
 from tunicorn.arbiter import Arbiter
 from tunicorn.config import Config
+from tunicorn.workers import choose_worker
 
 DEFAULT_CONFIG = {
-    'NAME': 'TUNICORN'
+    'NAME': 'TUNICORN',
+    'WORKER_CLASS': 'gevent',
+    'WORKERS': 1
 }
 
 
@@ -27,6 +30,15 @@ class Application(object):
 
         self.config = Config(os.getcwd(), defaults=DEFAULT_CONFIG)
         self.config.from_pyfile(args.filename)
+        self.init_config()
+
+    def init_config(self):
+        # init worker class
+        worker_class = choose_worker(self.config.WORKER_CLASS)
+        if worker_class is None:
+            # TODO(benjamin): process customer worker
+            pass
+        self.config.WORKER_CLASS = worker_class
 
     def run(self):
         try:
