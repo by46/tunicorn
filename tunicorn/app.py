@@ -36,7 +36,7 @@ class Application(object):
 
         # add ch to logger
         self.logger.addHandler(ch)
-        self.logger.setLevel(logging.INFO)
+        self.logger.setLevel(logging.DEBUG)
         self.do_load_config()
 
     def do_load_config(self):

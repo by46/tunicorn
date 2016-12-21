@@ -94,6 +94,7 @@ class Arbiter(Signaler):
             return
 
         self.num_workers -= 1
+        self.logger.debug('ttou %s', self.num_workers)
         self.manage_workers()
 
     def handle_usr1(self):
@@ -131,7 +132,6 @@ class Arbiter(Signaler):
         for i in range(self.num_workers - len(self.WORKERS.keys())):
             self.spawn_worker()
             time.sleep(0.1 * random.random())
-        pass
 
     def spawn_worker(self):
         self.worker_age += 1
@@ -319,7 +319,7 @@ class Arbiter(Signaler):
                     continue
 
                 sig_name = self.SIG_NAMES.get(sig)
-                handler = getattr(self, 'handler_%s' % sig_name, None)
+                handler = getattr(self, 'handle_%s' % sig_name, None)
                 if not handler:
                     self.logger.error('Unhandled signal: %s', sig_name)
                     continue

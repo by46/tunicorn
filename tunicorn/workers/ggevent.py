@@ -35,6 +35,14 @@ class GeventWorker(Worker):
     def handle(self, listener, client, addr):
         pass
 
+    # --------------------------------------------------
+    # signals handler methods
+    # --------------------------------------------------
+    def handle_quit(self):
+        # Move this out of the signal handler so we can use
+        # blocking calls. See #1126
+        gevent.spawn(super(GeventWorker, self).handle_quit)
+
     def run(self):
         servers = []
         ssl_args = {}
