@@ -12,6 +12,7 @@ from tunicorn import __version__
 from .exceptions import AppImportException
 from .exceptions import HaltServerException
 from .signaler import Signaler
+from .sock import create_sockets
 
 
 class Arbiter(Signaler):
@@ -30,8 +31,7 @@ class Arbiter(Signaler):
         self.num_workers = self.app.config.WORKERS
         # TODO(benjamin): process logger
         self.timeout = 10
-        self.logger = logging.getLogger('arbiter')
-        self.logger.setLevel(logging.INFO)
+        self.logger = self.app.logger
 
         self.master_name = "Master"
         # TODO(benjamin): set from configuration
@@ -265,8 +265,13 @@ class Arbiter(Signaler):
         self.init_signals()
 
         # TODO(benjamin): process socket listener
+        if not self.LISTENERS:
+            self.LISTENERS = create_sockets(self.app.config, self.logger)
 
+        listeners_str = ",".join([str(l) for l in self.LISTENERS])
         self.logger.debug("Arbiter booted")
+        self.logger.info("Listening at: %s (%s)", listeners_str, self.pid)
+        self.logger.info("Using worker: %s", self.worker_class.__name__)
 
     def stop(self, graceful=True):
         if self.reexec_pid == 0 and self.master_pid == 0:

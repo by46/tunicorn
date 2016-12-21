@@ -10,14 +10,14 @@ import stat
 import sys
 import time
 
-from gunicorn import util
-from gunicorn.six import string_types
+from six import string_types
+
+from . import util
 
 SD_LISTEN_FDS_START = 3
 
 
 class BaseSocket(object):
-
     def __init__(self, address, conf, log, fd=None):
         self.log = log
         self.conf = conf
@@ -51,7 +51,7 @@ class BaseSocket(object):
         if hasattr(sock, "set_inheritable"):
             sock.set_inheritable(True)
 
-        sock.listen(self.conf.backlog)
+        sock.listen(self.conf.BACKLOG)
         return sock
 
     def bind(self, sock):
@@ -70,7 +70,6 @@ class BaseSocket(object):
 
 
 class TCPSocket(BaseSocket):
-
     FAMILY = socket.AF_INET
 
     def __str__(self):
@@ -88,7 +87,6 @@ class TCPSocket(BaseSocket):
 
 
 class TCP6Socket(TCPSocket):
-
     FAMILY = socket.AF_INET6
 
     def __str__(self):
@@ -97,7 +95,6 @@ class TCP6Socket(TCPSocket):
 
 
 class UnixSocket(BaseSocket):
-
     FAMILY = socket.AF_UNIX
 
     def __init__(self, addr, conf, log, fd=None):
@@ -118,9 +115,9 @@ class UnixSocket(BaseSocket):
         return "unix:%s" % self.cfg_addr
 
     def bind(self, sock):
-        old_umask = os.umask(self.conf.umask)
+        old_umask = os.umask(self.conf.UMASK)
         sock.bind(self.cfg_addr)
-        util.chown(self.cfg_addr, self.conf.uid, self.conf.gid)
+        util.chown(self.cfg_addr, self.conf.UID, self.conf.GID)
         os.umask(old_umask)
 
     def close(self):
@@ -148,62 +145,9 @@ def create_sockets(conf, log):
     is a string, a Unix socket is created. Otherwise
     a TypeError is raised.
     """
-
-    # Systemd support, use the sockets managed by systemd and passed to
-    # gunicorn.
-    # http://www.freedesktop.org/software/systemd/man/systemd.socket.html
-    listeners = []
-    if ('LISTEN_PID' in os.environ
-            and int(os.environ.get('LISTEN_PID')) == os.getpid()):
-        for i in range(int(os.environ.get('LISTEN_FDS', 0))):
-            fd = i + SD_LISTEN_FDS_START
-            try:
-                sock = socket.fromfd(fd, socket.AF_UNIX, socket.SOCK_STREAM)
-                sockname = sock.getsockname()
-                if isinstance(sockname, str) and sockname.startswith('/'):
-                    listeners.append(UnixSocket(sockname, conf, log, fd=fd))
-                elif len(sockname) == 2 and '.' in sockname[0]:
-                    listeners.append(TCPSocket("%s:%s" % sockname, conf, log,
-                        fd=fd))
-                elif len(sockname) == 4 and ':' in sockname[0]:
-                    listeners.append(TCP6Socket("[%s]:%s" % sockname[:2], conf,
-                        log, fd=fd))
-            except socket.error:
-                pass
-        del os.environ['LISTEN_PID'], os.environ['LISTEN_FDS']
-
-        if listeners:
-            log.debug('Socket activation sockets: %s',
-                    ",".join([str(l) for l in listeners]))
-            return listeners
-
     # get it only once
-    laddr = conf.address
-
-    # check ssl config early to raise the error on startup
-    # only the certfile is needed since it can contains the keyfile
-    if conf.certfile and not os.path.exists(conf.certfile):
-        raise ValueError('certfile "%s" does not exist' % conf.certfile)
-
-    if conf.keyfile and not os.path.exists(conf.keyfile):
-        raise ValueError('keyfile "%s" does not exist' % conf.keyfile)
-
-    # sockets are already bound
-    if 'GUNICORN_FD' in os.environ:
-        fds = os.environ.pop('GUNICORN_FD').split(',')
-        for i, fd in enumerate(fds):
-            fd = int(fd)
-            addr = laddr[i]
-            sock_type = _sock_type(addr)
-
-            try:
-                listeners.append(sock_type(addr, conf, log, fd=fd))
-            except socket.error as e:
-                if e.args[0] == errno.ENOTCONN:
-                    log.error("GUNICORN_FD should refer to an open socket.")
-                else:
-                    raise
-        return listeners
+    listeners = []
+    laddr = conf.ADDRESS
 
     # no sockets is bound, first initialization of gunicorn in this env.
     for addr in laddr:

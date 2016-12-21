@@ -1,6 +1,10 @@
+import os
 import signal
 
 from tunicorn.signaler import Signaler
+from tunicorn.util import seed
+from tunicorn.util import set_owner_process
+from .workertmp import WorkerTmp
 
 
 class Worker(Signaler):
@@ -10,8 +14,12 @@ class Worker(Signaler):
         self.parent_id = parent_pid
         self.sockets = sockets
         self.app = app
+        self.config = self.app.config
         self.timeout = timeout
         self.booted = False
+        self.alive = True
+        self.tmp = WorkerTmp(self.config)
+        self.worker_connections = self.config.WORKER_CONNECTIONS
 
     # --------------------------------------------------
     # override methods
@@ -42,6 +50,15 @@ class Worker(Signaler):
         pass
 
     def init_process(self):
+
+        # set environment
+        if self.config.ENV:
+            for k, v in self.config.ENV.items():
+                os.environ[k] = v
+        set_owner_process(self.config.UID, self.config.GID, initgroups=self.config.INITGROUPS)
+
+        seed()
+
         self.init_signals()
 
         self.booted = True
@@ -54,3 +71,16 @@ class Worker(Signaler):
         for your particular evil schemes.
         """
         raise NotImplementedError()
+
+    # --------------------------------------------------
+    # properties methods
+    # --------------------------------------------------
+    @property
+    def pid(self):
+        return os.getpid()
+
+    # --------------------------------------------------
+    # public methods
+    # --------------------------------------------------
+    def __str__(self):
+        return '<Worker {0}>'.format(self.pid)
