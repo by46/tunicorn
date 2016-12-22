@@ -19,6 +19,8 @@ class Worker(Signaler):
         self.app = app
         self.config = self.app.config
         self.timeout = timeout
+
+        self.handler = None
         self.booted = False
         self.aborted = False
         self.alive = True
@@ -68,8 +70,9 @@ class Worker(Signaler):
         self.logger.info('Handling signal: %s', sig_name)
         handler()
 
-    def handler(self, socket, address):
-        pass
+    # --------------------------------------------------
+    # private methods
+    # --------------------------------------------------
 
     def init_process(self):
 
@@ -83,6 +86,7 @@ class Worker(Signaler):
 
         self.init_signals()
 
+        self.load_handler()
         self.booted = True
         self.run()
 
@@ -93,6 +97,12 @@ class Worker(Signaler):
         for your particular evil schemes.
         """
         raise NotImplementedError()
+
+    def load_handler(self):
+        try:
+            self.handler = self.app.handler
+        except SystemError as e:
+            self.logger.exception(e)
 
     # --------------------------------------------------
     # properties methods

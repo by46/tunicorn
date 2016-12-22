@@ -6,6 +6,7 @@ from argparse import ArgumentParser
 from tunicorn.arbiter import Arbiter
 from tunicorn.config import Config
 from tunicorn.workers import choose_worker
+from .util import import_app
 from .util import parse_address
 
 DEFAULT_CONFIG = {
@@ -18,7 +19,8 @@ DEFAULT_CONFIG = {
     "BACKLOG": 2048,
     "GRACEFUL_TIMEOUT": 5,
     "WORKER_CONNECTIONS": 1000,
-    "TIMEOUT": 30
+    "TIMEOUT": 30,
+    "CHDIR": os.getcwd()
 }
 
 
@@ -26,6 +28,8 @@ class Application(object):
     def __init__(self, usage=None, prog=None):
         self.usage = usage
         self.config = None
+        self.app_module = None
+        self.callable = None
         self.prog = prog or 'Tunicorn'
         self.logger = logging.getLogger('app')
         ch = logging.StreamHandler()
@@ -49,10 +53,11 @@ class Application(object):
 
         self.config = Config(os.getcwd(), defaults=DEFAULT_CONFIG)
         self.config.from_pyfile(args.filename)
-        self.init_config()
+        self.init_config(args)
 
-    def init_config(self):
+    def init_config(self, args):
         # init worker class
+        self.app_module = args.module
         worker_class = choose_worker(self.config.WORKER_CLASS)
         if worker_class is None:
             # TODO(benjamin): process customer worker
@@ -67,7 +72,22 @@ class Application(object):
         if self.config.GID is None:
             self.config.GID = os.getgid()
 
+    def chdir(self):
+        os.chdir(self.config.CHDIR)
+        sys.path.insert(0, self.config.CHDIR)
+
+    def load(self):
+        self.chdir()
+        return import_app(self.app_module)
+
+    @property
+    def handler(self):
+        if self.callable is None:
+            self.callable = self.load()
+        return self.callable
+
     def run(self):
+        self.load()
         try:
             Arbiter(self).run()
         except RuntimeError as e:

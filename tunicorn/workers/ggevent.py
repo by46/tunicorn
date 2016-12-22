@@ -32,8 +32,8 @@ class GeventWorker(Worker):
                                       _sock=s))
         self.sockets = sockets
 
-    def handle(self, listener, client, addr):
-        pass
+    # def handle(self, listener, client, addr):
+    #     pass
 
     # --------------------------------------------------
     # signals handler methods
@@ -52,7 +52,7 @@ class GeventWorker(Worker):
             pool = Pool(self.worker_connections)
 
             # TODO(benjamin): process handler
-            hfun = partial(self.handle, s)
+            hfun = partial(self.handler, s)
             server = StreamServer(s, handle=hfun, spawn=pool, **ssl_args)
 
             server.start()

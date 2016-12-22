@@ -1,10 +1,15 @@
+import logging
 import os
-import socket
 import random
+import socket
+import sys
 import time
+import traceback
 
 import fcntl
 import pwd
+
+from .exceptions import AppImportException
 
 
 def set_non_blocking(fd):
@@ -89,6 +94,7 @@ def chown(path, uid, gid):
     gid = abs(gid) & 0x7FFFFFFF  # see note above.
     os.chown(path, uid, gid)
 
+
 def is_ipv6(addr):
     try:
         socket.inet_pton(socket.AF_INET6, addr)
@@ -97,3 +103,39 @@ def is_ipv6(addr):
     except ValueError:  # ipv6 not supported on this platform
         return False
     return True
+
+
+def import_app(module):
+    parts = module.split(':', 1)
+    if len(parts) == 1:
+        module, obj = module, 'application'
+    else:
+        module, obj = parts[0], parts[1]
+
+    try:
+        __import__(module)
+    except ImportError:
+        if module.endswith('.py') and os.path.exists(module):
+            msg = "Failed to find application, did you mean '{0}:{1}'?"
+            raise ImportError(msg.format(module.rsplit(".", 1)[0], obj))
+        else:
+            raise
+
+    mod = sys.modules[module]
+
+    is_debug = logging.root.level == logging.DEBUG
+
+    try:
+        app = eval(obj, mod.__dict__)
+    except NameError:
+        if is_debug:
+            traceback.print_exception(*sys.exc_clear())
+        raise AppImportException("Failed to find application: {0}".format(module))
+
+    if app is None:
+        raise AppImportException("Failed to find application object: {0}".format(obj))
+
+    if not callable(app):
+        raise AppImportException("Application object must be callable")
+
+    return app
