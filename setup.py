@@ -42,7 +42,7 @@ def read_version(version_file):
 
 
 setup(
-    name='Flask-NegLog',
+    name='Tunicorn',
     version=__version__,
 
     description='Socket HTTP Server for Unix',
