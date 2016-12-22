@@ -139,3 +139,7 @@ def import_app(module):
         raise AppImportException("Application object must be callable")
 
     return app
+
+
+def unlink(name):
+    os.unlink(name)
