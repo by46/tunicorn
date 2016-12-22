@@ -55,6 +55,11 @@ setup(
     install_requires=read_dependencies(),
     include_package_data=True,
     packages=find_packages(),
+    entry_points={
+      'console_scripts': [
+          'tunicorn=tunicorn.app.run'
+      ]
+    },
     classifiers=[
         'Programming Language :: Python',
         'Development Status :: 3 - Alpha',

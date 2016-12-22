@@ -93,3 +93,7 @@ class Application(object):
         except RuntimeError as e:
             self.logger.exception(e)
             sys.exit(1)
+
+
+def run():
+    Application('%(prog)s [OPTIONS] [APP_MODULE]').run()
