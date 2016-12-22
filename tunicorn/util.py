@@ -148,7 +148,7 @@ def unlink(name):
     try:
         os.unlink(name)
     except OSError as e:
-        if e.errno not in (errno.ENOENT, errno.ENODIR):
+        if e.errno not in (errno.ENOENT, errno.ENOTDIR):
             raise
 
 
@@ -191,5 +191,5 @@ def daemonize(enable_stdio_inheritance=False):
                 except AttributeError:
                     pass
 
-            redirect(sys.stdou, 1)
+            redirect(sys.stdout, 1)
             redirect(sys.stderr, 2)
