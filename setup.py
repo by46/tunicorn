@@ -57,7 +57,7 @@ setup(
     packages=find_packages(),
     entry_points={
       'console_scripts': [
-          'tunicorn=tunicorn.app.run'
+          'tunicorn=tunicorn.app:run'
       ]
     },
     classifiers=[
