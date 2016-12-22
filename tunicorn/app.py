@@ -6,6 +6,7 @@ from argparse import ArgumentParser
 from tunicorn.arbiter import Arbiter
 from tunicorn.config import Config
 from tunicorn.workers import choose_worker
+from .util import daemonize
 from .util import import_app
 from .util import parse_address
 
@@ -20,7 +21,9 @@ DEFAULT_CONFIG = {
     "GRACEFUL_TIMEOUT": 5,
     "WORKER_CONNECTIONS": 1000,
     "TIMEOUT": 30,
-    "CHDIR": os.getcwd()
+    "CHDIR": os.getcwd(),
+    'DAEMON': False,
+    'ENABLE_STDIO_INHERITANCE': False
 }
 
 
@@ -88,6 +91,8 @@ class Application(object):
 
     def run(self):
         self.load()
+        if self.config.DAEMON:
+            daemonize(self.config.ENABLE_STDIO_INHERITANCE)
         try:
             Arbiter(self).run()
         except RuntimeError as e:

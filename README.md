@@ -1,5 +1,6 @@
 # tunicorn
 It's common pre-fork model tcp server for some project, it's supported linux platform
+it's inspiration come from gunicorn
 
 ## Supported Platform
 We just support Linux now, we will optimize to supported for other Unix-like system.

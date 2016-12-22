@@ -1,3 +1,4 @@
+import errno
 import logging
 import os
 import random
@@ -8,6 +9,8 @@ import traceback
 
 import fcntl
 import pwd
+
+REDIRECT_TO = getattr(os, 'devnull', '/dev/null')
 
 from .exceptions import AppImportException
 
@@ -142,4 +145,51 @@ def import_app(module):
 
 
 def unlink(name):
-    os.unlink(name)
+    try:
+        os.unlink(name)
+    except OSError as e:
+        if e.errno not in (errno.ENOENT, errno.ENODIR):
+            raise
+
+
+def daemonize(enable_stdio_inheritance=False):
+    """Standard daemonization of a process
+    http://www.svbug.com/documentation/comp.unix.programmer-FAQ/faq_2.html#SEC16
+    :param enable_stdio_inheritance:
+    :return:
+    """
+    if 'TUNICORN_FD' not in os.environ:
+        if os.fork():
+            os._exit(0)
+        os.setsid()
+
+        if os.fork():
+            os._exit(0)
+        os.umask(0o22)
+
+        if not enable_stdio_inheritance:
+            os.closerange(0, 3)
+
+            fd_null = os.open(REDIRECT_TO, os.O_RDWR)
+            if fd_null != 0:
+                os.dup2(fd_null, 0)
+
+            os.dup2(fd_null, 1)
+            os.dup2(fd_null, 2)
+        else:
+            fd_null = os.open(REDIRECT_TO, os.O_RDWR)
+            if fd_null != 0:
+                os.close(0)
+                os.dup2(fd_null, 0)
+
+            def redirect(stream, fd_expect):
+                try:
+                    fd = stream.fileno()
+                    if fd == fd_expect and stream.isatty():
+                        os.close(fd)
+                        os.dup2(fd_null, fd)
+                except AttributeError:
+                    pass
+
+            redirect(sys.stdou, 1)
+            redirect(sys.stderr, 2)
