@@ -16,4 +16,4 @@ pip install --trusted-host scmesos06 -i http://scmesos06/simple -r requirements_
 pip install --trusted-host scmesos06 -i http://scmesos06/simple Coverage --cache-dir=/tmp/recipe
 [ $? -gt 0 ] && exit 1
 
-${PYLINT} -f parseable tunicorn | tee pylint.out
+${PYLINT} -f parseable --ignore tunicorn/packages tunicorn | tee pylint.out

@@ -367,7 +367,6 @@ class Arbiter(Signaler):
         except SystemExit:
             raise
         except Exception as e:
-            print e
             self.logger.warning("Unhandled exception in main loop", exc_info=True)
             self.stop(False)
             if self.pidfile is not None:
